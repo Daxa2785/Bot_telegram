@@ -1,0 +1,80 @@
+import os
+import telebot
+import ast
+import operator as op
+
+# Tokenni muhiti o'zgaruvchisidan ol
+TELEGRAM_TOKEN = os.environ.get("7854974433:AAFLE3XwC1yugPfdqkO5oDVwsWRelbzOY_g")
+if not TELEGRAM_TOKEN:
+    raise SystemExit("TELEGRAM_TOKEN")
+
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
+# Ruxsat etilgan operatorlar
+ALLOWED_OPERATORS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.USub: op.neg,
+    ast.Mod: op.mod,
+    ast.FloorDiv: op.floordiv,
+}
+
+def eval_expr(node):
+    """Xavfsiz AST orqali arifmetik ifodani baholash"""
+    if isinstance(node, ast.Num):  # Python <3.8
+        return node.n
+    if isinstance(node, ast.Constant):  # Python 3.8+
+        if isinstance(node.value, (int, float)):
+            return node.value
+        raise ValueError("Faqat sonlar ruxsat etilgan")
+    if isinstance(node, ast.BinOp):
+        left = eval_expr(node.left)
+        right = eval_expr(node.right)
+        op_type = type(node.op)
+        if op_type in ALLOWED_OPERATORS:
+            return ALLOWED_OPERATORS[op_type](left, right)
+    if isinstance(node, ast.UnaryOp):
+        operand = eval_expr(node.operand)
+        op_type = type(node.op)
+        if op_type in ALLOWED_OPERATORS:
+            return ALLOWED_OPERATORS[op_type](operand)
+    raise ValueError("Notog'ri ifoda yoki ruxsat etilmagan operator")
+
+def safe_eval(expression):
+    """Xavfsiz baholash: faqat + - * / % // ** va sonlar"""
+    try:
+        tree = ast.parse(expression, mode='eval')
+        return eval_expr(tree.body)
+    except Exception as e:
+        raise ValueError(f"Xatolik: {e}")
+
+# /start
+@bot.message_handler(commands=['start'])
+def start(msg):
+    bot.send_message(msg.chat.id,
+                     "Salom! Men oddiy kalkulyator botman.\n"
+                     "Ifodani yuboring (masalan: 12+34*2 yoki (3.5+2)/7).\n"
+                     "/help - ko'proq ma'lumot")
+
+@bot.message_handler(commands=['help'])
+def help_msg(msg):
+    bot.send_message(msg.chat.id,
+                     "Ruxsat etilgan operatorlar: +  -  *  /  %  //  **\n"
+                     "Misol: 2+3*4, (5+3)/2, -4**2\n"
+                     "Ehtiyot bo'ling: faqat arifmetik ifodalar (matn, funksiyalar ruxsat etilmaydi).")
+
+@bot.message_handler(func=lambda m: True)
+def calculate(msg):
+    text = msg.text.strip()
+    try:
+        result = safe_eval(text)
+        bot.send_message(msg.chat.id, f"🔢 {text} = {result}")
+    except Exception as e:
+        bot.send_message(msg.chat.id, f"⚠️ Hisoblashda xatolik: {e}")
+
+if __name__ == "__main__":
+    print("Bot ishga tushdi...")
+    bot.polling(non_stop=True)
